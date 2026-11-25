@@ -45,7 +45,7 @@ function beep(freq, dur = 0.1, type = 'sine', vol = 0.12, slide = 0) {
 
 // ---------- layout ----------
 function resize() {
-  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  dpr = Math.min(window.devicePixelRatio || 1, 3);
   const cssH = window.innerHeight, cssW = Math.min(window.innerWidth, cssH * 0.66);
   cv.style.width = cssW + 'px'; cv.style.height = cssH + 'px';
   cv.width = Math.round(cssW * dpr); cv.height = Math.round(cssH * dpr);
@@ -59,6 +59,7 @@ const RED = '#ff4d6d', BLUE = '#4dc3ff', GOLD = '#ffd166', ORANGE = '#ff9e3d';
 let state = 'menu', mode = 'random', seed = 0, rng = Math.random;
 let t = 0, camY = 0, genY = 0, dist = 0, bonus = 0, combo = 0, comboT = 0, shake = 0, deadT = 0, shardCount = 0;
 let slowT = 0, bannerT = 0, curZone = 0, voids = [], winds = [], pows = [], held = 0, p, magnets, shards, mines, parts, trail;
+ctx.imageSmoothingQuality = 'high';
 const stars = Array.from({ length: 70 }, () => ({ x: Math.random() * W, y: Math.random() * 1000, d: 0.1 + Math.random() * 0.5, r: Math.random() * 1.4 + .4 }));
 
 const K = 3.0e6, SOFT = 2500, FMAX = 1500, VMAX = 560, DRAG = 0.55;
@@ -318,10 +319,17 @@ function stepParts(dt) {
 }
 
 // ---------- render ----------
+const glowCache = {};
 function glow(x, y, r, col, a) {
-  const g = ctx.createRadialGradient(x, y, 0, x, y, r);
-  g.addColorStop(0, col); g.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.globalAlpha = a; ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, 6.283); ctx.fill(); ctx.globalAlpha = 1;
+  let c = glowCache[col];
+  if (!c) {
+    c = document.createElement('canvas'); c.width = c.height = 128;
+    const g = c.getContext('2d'), gr = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+    gr.addColorStop(0, col); gr.addColorStop(.4, col + '88'); gr.addColorStop(1, col + '00');
+    g.fillStyle = gr; g.fillRect(0, 0, 128, 128); glowCache[col] = c;
+  }
+  const pa = ctx.globalAlpha; ctx.globalAlpha = pa * a;
+  ctx.drawImage(c, x - r, y - r, r * 2, r * 2); ctx.globalAlpha = pa;
 }
 
 function render() {
