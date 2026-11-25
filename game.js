@@ -20,16 +20,26 @@ function hashStr(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) { h
 
 // ---------- audio ----------
 let actx = null;
+function getCtx() {
+  if (!actx) { try { actx = new (window.AudioContext || window.webkitAudioContext)(); } catch { return null; } }
+  return actx;
+}
+function unlockAudio() {
+  const c = getCtx(); if (!c) return;
+  if (c.state !== 'running') c.resume();
+  try { const b = c.createBuffer(1, 1, 22050), s = c.createBufferSource(); s.buffer = b; s.connect(c.destination); s.start(0); } catch {}
+}
+['touchstart', 'touchend', 'pointerup', 'click', 'keydown'].forEach(n => window.addEventListener(n, unlockAudio, { passive: true }));
 function beep(freq, dur = 0.1, type = 'sine', vol = 0.12, slide = 0) {
   if (!soundOn) return;
+  const c = getCtx(); if (!c) return;
+  if (c.state !== 'running') c.resume();
   try {
-    if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)();
-    if (actx.state === 'suspended') actx.resume();
-    const o = actx.createOscillator(), g = actx.createGain(), t = actx.currentTime;
+    const o = c.createOscillator(), g = c.createGain(), t = c.currentTime;
     o.type = type; o.frequency.setValueAtTime(freq, t);
     if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(30, freq + slide), t + dur);
     g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    o.connect(g).connect(actx.destination); o.start(t); o.stop(t + dur);
+    o.connect(g).connect(c.destination); o.start(t); o.stop(t + dur);
   } catch {}
 }
 
