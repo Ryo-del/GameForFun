@@ -109,9 +109,10 @@ function burst(x, y, col, n, spd = 160) {
   }
 }
 
-function flip() {
+function flip(side = 0) {
   if (state !== 'play') return;
   p.s *= -1; p.flip = 1;
+  if (side) { p.vx = Math.max(-VMAX, Math.min(VMAX, p.vx * 0.5 + side * 260)); }
   beep(p.s > 0 ? 520 : 390, 0.08, 'triangle', 0.1, p.s > 0 ? 160 : -120);
   burst(p.x, p.y, p.s > 0 ? RED : BLUE, 8, 90);
 }
@@ -312,9 +313,9 @@ function render() {
     ctx.globalAlpha = 1;
   }
   if (state === 'play' && t < 5) {
-    ctx.textAlign = 'center'; ctx.fillStyle = '#fff'; ctx.font = '600 16px sans-serif';
+    ctx.textAlign = 'center'; ctx.fillStyle = '#fff'; ctx.font = '600 14px sans-serif';
     ctx.globalAlpha = Math.min(1, 5 - t);
-    ctx.fillText('ТАП — смена заряда', W / 2, H * 0.88);
+    ctx.fillText('ТАП слева / справа — смена заряда и рывок в сторону', W / 2, H * 0.88);
     ctx.font = '13px sans-serif'; ctx.fillText('разные заряды притягиваются', W / 2, H * 0.88 + 22);
     ctx.globalAlpha = 1;
   }
@@ -345,12 +346,16 @@ function frame(now) {
 document.addEventListener('visibilitychange', () => { paused = document.hidden; last = performance.now(); });
 
 // ---------- input ----------
-cv.addEventListener('pointerdown', e => { e.preventDefault(); flip(); });
+cv.addEventListener('pointerdown', e => {
+  e.preventDefault();
+  const r = cv.getBoundingClientRect();
+  flip(e.clientX < r.left + r.width / 2 ? -1 : 1);
+});
 window.addEventListener('keydown', e => {
   if (e.repeat) return;
   if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyZ', 'KeyX'].includes(e.code)) {
     e.preventDefault();
-    if (state === 'play') flip();
+    if (state === 'play') flip(e.code === 'ArrowLeft' ? -1 : e.code === 'ArrowRight' ? 1 : 0);
     else if (state === 'over') startGame(mode);
     else if (state === 'menu') startGame('random');
   }
