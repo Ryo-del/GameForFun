@@ -58,7 +58,7 @@ resize();
 const RED = '#ff4d6d', BLUE = '#4dc3ff', GOLD = '#ffd166', ORANGE = '#ff9e3d';
 let state = 'menu', mode = 'random', seed = 0, rng = Math.random;
 let t = 0, camY = 0, genY = 0, dist = 0, bonus = 0, combo = 0, comboT = 0, shake = 0, deadT = 0, shardCount = 0;
-let held = 0, p, magnets, shards, mines, parts, trail;
+let slowT = 0, bannerT = 0, curZone = 0, voids = [], winds = [], pows = [], held = 0, p, magnets, shards, mines, parts, trail;
 const stars = Array.from({ length: 70 }, () => ({ x: Math.random() * W, y: Math.random() * 1000, d: 0.1 + Math.random() * 0.5, r: Math.random() * 1.4 + .4 }));
 
 const K = 3.0e6, SOFT = 2500, FMAX = 1500, VMAX = 560, DRAG = 0.55;
@@ -70,7 +70,8 @@ function startGame(m) {
   seed = m === 'daily' ? hashStr(todayKey()) : (Math.random() * 4294967296) >>> 0;
   rng = mulberry32(seed);
   held = 0; t = 0; camY = 0; dist = 0; bonus = 0; combo = 0; comboT = 0; shake = 0; deadT = 0; shardCount = 0;
-  p = { x: W / 2, y: H * 0.72, vx: 0, vy: 0, s: 1, flip: 0 };
+  p = { x: W / 2, y: H * 0.72, vx: 0, vy: 0, s: 1, flip: 0, shield: false, inv: 0 };
+  voids = []; winds = []; pows = []; slowT = 0; bannerT = 2.5; curZone = 0;
   magnets = []; shards = []; mines = []; parts = []; trail = [];
   // tutorial magnet
   magnets.push({ x: W / 2 + 55, y: p.y - 190, q: -1, s: 1, r: 15 });
@@ -81,33 +82,104 @@ function startGame(m) {
   $('menu').classList.add('hidden'); $('over').classList.add('hidden');
 }
 
+const ZONES = [
+  { n: 'ДРЕЙФ', bg: '#07071a' }, { n: 'ПУЛЬСАР', bg: '#14061f' },
+  { n: 'ШТОРМ', bg: '#061620' }, { n: 'БЕЗДНА', bg: '#190808' }
+];
+const ZLEN = 2500;
+const zoneOf = d => Math.floor(Math.max(0, d) / ZLEN);
+
+function addMagnet(x, y, q, sPow, mv) {
+  const m = { x, y, q, s: sPow, r: 15 };
+  if (mv) { m.ox = x; m.amp = mv.amp; m.sp = mv.sp; m.ph = rng() * 6.28; }
+  magnets.push(m); return m;
+}
+const addShard = (x, y) => shards.push({ x: Math.max(22, Math.min(W - 22, x)), y, got: false });
+const addMine = (x, y, amp = 0) => mines.push({ x0: x, y, amp, ph: rng() * 6.28, sp: 1 + rng() * 1.6, r: 11, x });
+const rq = () => rng() < .5 ? 1 : -1;
+
+function pBasic(y, d) {
+  const n = rng() < 0.35 + d * 0.3 ? 2 : 1, row = [];
+  for (let i = 0; i < n; i++) {
+    const x = n === 1 ? 70 + rng() * 260 : (i === 0 ? 60 + rng() * 120 : 220 + rng() * 120);
+    row.push(addMagnet(x, y + (rng() - .5) * 50, rq(), .75 + rng() * .6));
+  }
+  const b = row[(rng() * row.length) | 0], a = rng() * 6.283, rr = 55 + rng() * 40;
+  addShard(b.x + Math.cos(a) * rr, b.y + Math.sin(a) * rr);
+  if (rng() < 0.2 + d * 0.55) {
+    for (let k = 0; k < 6; k++) {
+      const mx = 40 + rng() * 320, my = y + (rng() - .5) * 140;
+      if (magnets.every(m => Math.hypot(m.x - mx, m.y - my) > 70) && shards.every(s => Math.hypot(s.x - mx, s.y - my) > 55)) {
+        addMine(mx, my, rng() < 0.2 + d * 0.6 ? 40 + rng() * 70 : 0); break;
+      }
+    }
+  }
+}
+function pSlalom(y) {
+  const side = rq(); let q = rq();
+  for (let i = 0; i < 3; i++) {
+    addMagnet(200 + side * (i % 2 ? 85 : -85), y - i * 100, q, .9);
+    q = -q;
+    if (i < 2) addShard(200 + side * (i % 2 ? -10 : 10), y - i * 100 - 50);
+  }
+  genY -= 200;
+}
+function pArc(y) {
+  const mx = 120 + rng() * 160, q = rq(), a0 = rng() * 6.283;
+  addMagnet(mx, y, q, 1.1);
+  for (let i = 0; i < 5; i++) { const a = a0 + i * .8; addShard(mx + Math.cos(a) * 72, y + Math.sin(a) * 72); }
+  addMagnet(mx + (rng() < .5 ? -1 : 1) * 110, y - 130, -q, .9);
+  genY -= 130;
+}
+function pMoving(y, d) {
+  const n = rng() < .4 + d * .3 ? 2 : 1;
+  for (let i = 0; i < n; i++) {
+    const ox = n === 1 ? 200 : (i ? 270 : 130), m = addMagnet(ox, y - i * 120, rq(), 1, { amp: 45 + rng() * 55, sp: .8 + rng() * .9 });
+    addShard(ox + (rng() < .5 ? -1 : 1) * 80, m.y + (rng() - .5) * 60);
+  }
+  genY -= n > 1 ? 120 : 0;
+}
+function pGate(y) {
+  const gx = 100 + rng() * 200, gw = 125, mv = rng() < .35 ? 28 : 0;
+  for (let x = 28; x < W; x += 40) if (Math.abs(x - gx) > gw / 2) addMine(x, y, 0);
+  addShard(gx, y);
+  addMagnet(gx + rq() * 95, y + 110, rq(), 1);
+  addMagnet(gx + rq() * 95, y - 100, rq(), 1);
+  genY -= 100;
+}
+function pWind(y) {
+  winds.push({ y: y - 90, h: 180, dir: rq(), str: 300 + rng() * 120 });
+  for (let i = 0; i < 2; i++) { addMagnet(80 + rng() * 240, y - 60 + i * 110, rq(), 1); }
+  addShard(60 + rng() * 280, y); addShard(60 + rng() * 280, y + 60);
+  genY -= 90;
+}
+function pVoid(y) {
+  const vx = 120 + rng() * 160;
+  voids.push({ x: vx, y, r: 15 });
+  for (let i = 0; i < 4; i++) { const a = i * 1.57 + .8; addShard(vx + Math.cos(a) * 88, y + Math.sin(a) * 88); }
+  addMagnet(vx + (vx < 200 ? 120 : -120), y - 120, rq(), 1.1);
+  addMagnet(vx + (vx < 200 ? 120 : -120), y + 100, rq(), 1.1);
+  genY -= 120;
+}
+const PATTERNS = [
+  { min: 0, w: 5, z: -1, f: pBasic }, { min: 300, w: 2, z: -1, f: pSlalom },
+  { min: 700, w: 2, z: 1, f: pArc }, { min: 1000, w: 2, z: 1, f: pMoving },
+  { min: 1500, w: 2, z: -1, f: pGate }, { min: 2000, w: 2, z: 2, f: pWind },
+  { min: 2800, w: 2, z: 3, f: pVoid }
+];
+
 function generate() {
   while (genY > camY - 300) {
-    const d = diff();
+    const d = diff(), gd = Math.max(0, -genY), gz = zoneOf(gd) % 4;
     genY -= 140 + rng() * 80 - d * 30;
-    const n = rng() < 0.35 + d * 0.3 ? 2 : 1;
-    const rowM = [];
-    for (let i = 0; i < n; i++) {
-      const x = n === 1 ? 70 + rng() * 260 : (i === 0 ? 60 + rng() * 120 : 220 + rng() * 120);
-      const m = { x, y: genY + (rng() - .5) * 50, q: rng() < .5 ? 1 : -1, s: .75 + rng() * .6, r: 15 };
-      magnets.push(m); rowM.push(m);
-    }
-    // shard orbiting a magnet or between them
-    const base = rowM[(rng() * rowM.length) | 0];
-    const a = rng() * Math.PI * 2, rr = 55 + rng() * 40;
-    const sx = Math.max(25, Math.min(W - 25, base.x + Math.cos(a) * rr));
-    const sy = base.y + Math.sin(a) * rr;
-    shards.push({ x: sx, y: sy, got: false });
-    // mines
-    if (rng() < 0.2 + d * 0.55) {
-      for (let tries = 0; tries < 6; tries++) {
-        const mx = 40 + rng() * 320, my = genY + (rng() - .5) * 140;
-        const ok = magnets.every(m => Math.hypot(m.x - mx, m.y - my) > 70) && shards.every(s => Math.hypot(s.x - mx, s.y - my) > 55);
-        if (!ok) continue;
-        const moving = rng() < 0.2 + d * 0.6;
-        mines.push({ x0: mx, y: my, amp: moving ? 40 + rng() * 70 : 0, ph: rng() * 6.28, sp: 1 + rng() * 1.6, r: 11, x: mx });
-        break;
-      }
+    const opts = PATTERNS.filter(p => gd >= p.min).map(p => ({ p, w: p.w * (p.z === gz ? 3 : 1) }));
+    let r = rng() * opts.reduce((a, o) => a + o.w, 0), pick = opts[0].p;
+    for (const o of opts) { r -= o.w; if (r <= 0) { pick = o.p; break; } }
+    pick.f(genY, d);
+    if (rng() < 0.13 && gd > 400) {
+      const px = 50 + rng() * 300, py = genY - 70;
+      if (mines.every(m => Math.hypot(m.x0 - px, m.y - py) > 60) && voids.every(v => Math.hypot(v.x - px, v.y - py) > 90))
+        pows.push({ x: px, y: py, type: rng() < .55 ? 'shield' : 'slow', got: false });
     }
   }
 }
@@ -150,6 +222,8 @@ function step(dt) {
   if (state === 'dying') { deadT += dt; if (deadT > 0.8) { state = 'over'; $('over').classList.remove('hidden'); } return; }
   if (state !== 'play') return;
 
+  if (p.inv > 0) p.inv -= dt;
+  for (const m of magnets) if (m.amp) m.x = m.ox + Math.sin(t * m.sp + m.ph) * m.amp;
   let ax = 0, ay = 0;
   for (const m of magnets) {
     const dx = m.x - p.x, dy = m.y - p.y;
@@ -167,6 +241,17 @@ function step(dt) {
       if (vn < 0) { p.vx -= 1.7 * vn * nx; p.vy -= 1.7 * vn * ny; beep(140, .06, 'square', .05); shake = Math.max(shake, 3); }
     }
   }
+  for (const v of voids) {
+    const dx = v.x - p.x, dy = v.y - p.y, d2 = dx * dx + dy * dy, d = Math.sqrt(d2) || 1;
+    if (d > 380) continue;
+    const f = Math.min(FMAX, K * .8 / (d2 + SOFT));
+    ax += dx / d * f; ay += dy / d * f;
+    if (d < v.r + 7 && p.inv <= 0) {
+      if (p.shield) { p.shield = false; p.inv = 1; p.vx = -dx / d * 450; p.vy = -dy / d * 450; burst(p.x, p.y, '#7cffb2', 20, 220); beep(300, .2, 'square', .12, 300); }
+      else { die(); return; }
+    }
+  }
+  for (const w of winds) if (p.y > w.y && p.y < w.y + w.h) ax += w.dir * w.str;
   p.vx += (ax + held * 800) * dt; p.vy += ay * dt;
   const dr = Math.exp(-DRAG * dt); p.vx *= dr; p.vy *= dr;
   const sp = Math.hypot(p.vx, p.vy); if (sp > VMAX) { p.vx *= VMAX / sp; p.vy *= VMAX / sp; }
@@ -193,20 +278,35 @@ function step(dt) {
       beep(520 + Math.min(combo, 12) * 55, .14, 'triangle', .13);
     }
   }
+  for (const o of pows) {
+    if (o.got || Math.hypot(o.x - p.x, o.y - p.y) > 24) continue;
+    o.got = true; burst(o.x, o.y, o.type === 'shield' ? '#7cffb2' : '#c58bff', 20, 200);
+    if (o.type === 'shield') { p.shield = true; beep(660, .2, 'sine', .14, 400); } else { slowT = 5; beep(300, .3, 'sine', .14, 500); }
+  }
   if (comboT > 0) { comboT -= dt; if (comboT <= 0) combo = 0; }
 
   // mines
   for (const m of mines) {
+    if (m.dead) continue;
     m.x = m.x0 + Math.sin(t * m.sp + m.ph) * m.amp;
-    if (Math.hypot(m.x - p.x, m.y - p.y) < m.r + 7) { die(); return; }
+    if (p.inv <= 0 && Math.hypot(m.x - p.x, m.y - p.y) < m.r + 7) {
+      if (p.shield) { p.shield = false; p.inv = 1; m.dead = true; burst(m.x, m.y, ORANGE, 24, 240); beep(300, .2, 'square', .12, 300); shake = 6; }
+      else { die(); return; }
+    }
   }
   if (p.y > camY + H + 12) { die(); return; }
 
+  const z = zoneOf(dist);
+  if (z !== curZone) { curZone = z; bannerT = 2.5; beep(330, .4, 'sine', .1, 330); }
+  if (bannerT > 0) bannerT -= dt;
   // cleanup
   const lim = camY + H + 150;
-  if (magnets.length > 40) magnets = magnets.filter(m => m.y < lim);
-  if (shards.length > 40) shards = shards.filter(s => !s.got && s.y < lim);
-  if (mines.length > 30) mines = mines.filter(m => m.y < lim);
+  if (magnets.length > 60) magnets = magnets.filter(m => m.y < lim);
+  if (shards.length > 60) shards = shards.filter(s => !s.got && s.y < lim);
+  if (mines.length > 60) mines = mines.filter(m => m.y < lim && !m.dead);
+  if (voids.length > 6) voids = voids.filter(v => v.y < lim);
+  if (winds.length > 6) winds = winds.filter(w => w.y < lim);
+  if (pows.length > 10) pows = pows.filter(o => !o.got && o.y < lim);
 }
 
 function stepParts(dt) {
@@ -226,7 +326,7 @@ function glow(x, y, r, col, a) {
 
 function render() {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.fillStyle = '#07071a'; ctx.fillRect(0, 0, cv.width, cv.height);
+  ctx.fillStyle = ZONES[state === 'menu' ? 0 : curZone % 4].bg; ctx.fillRect(0, 0, cv.width, cv.height);
   const sx = shake ? (Math.random() - .5) * shake : 0, sy = shake ? (Math.random() - .5) * shake : 0;
   ctx.setTransform(scale, 0, 0, scale, sx * scale, sy * scale);
 
@@ -248,6 +348,37 @@ function render() {
   const dg = ctx.createLinearGradient(0, camY + H - 50, 0, camY + H);
   dg.addColorStop(0, 'rgba(255,60,80,0)'); dg.addColorStop(1, 'rgba(255,60,80,.45)');
   ctx.fillStyle = dg; ctx.fillRect(0, camY + H - 50, W, 50);
+
+  // wind
+  for (const w of winds) {
+    if (w.y > bot || w.y + w.h < top) continue;
+    ctx.fillStyle = 'rgba(120,200,255,.06)'; ctx.fillRect(0, w.y, W, w.h);
+    ctx.strokeStyle = 'rgba(160,220,255,.35)'; ctx.lineWidth = 2;
+    for (let i = 0; i < 9; i++) {
+      const x = (((t * 140 * w.dir + i * 47) % W) + W) % W, y = w.y + 12 + (i * 37) % (w.h - 24);
+      ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + w.dir * 22, y); ctx.moveTo(x + w.dir * 14, y - 5); ctx.lineTo(x + w.dir * 22, y); ctx.lineTo(x + w.dir * 14, y + 5); ctx.stroke();
+    }
+  }
+  // voids
+  for (const v of voids) {
+    if (v.y < top - 100 || v.y > bot + 100) continue;
+    glow(v.x, v.y, 80, '#8a3dff', .5);
+    ctx.save(); ctx.translate(v.x, v.y); ctx.rotate(t * 2);
+    ctx.strokeStyle = '#b57bff'; ctx.lineWidth = 3; ctx.setLineDash([10, 8]);
+    for (let r = 26; r <= 44; r += 9) { ctx.globalAlpha = 1 - (r - 20) / 40; ctx.beginPath(); ctx.arc(0, 0, r, 0, 6.283); ctx.stroke(); ctx.rotate(1); }
+    ctx.restore(); ctx.setLineDash([]); ctx.globalAlpha = 1;
+    ctx.fillStyle = '#000'; ctx.beginPath(); ctx.arc(v.x, v.y, v.r, 0, 6.283); ctx.fill();
+  }
+  // powerups
+  for (const o of pows) {
+    if (o.got || o.y < top || o.y > bot) continue;
+    const col = o.type === 'shield' ? '#7cffb2' : '#c58bff', bob = Math.sin(t * 3 + o.x) * 3;
+    glow(o.x, o.y + bob, 30, col, .5);
+    ctx.strokeStyle = col; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(o.x, o.y + bob, 12, 0, 6.283); ctx.stroke();
+    ctx.beginPath();
+    if (o.type === 'shield') { for (let i = 0; i < 6; i++) { const a = i * 1.047; ctx.lineTo(o.x + Math.cos(a) * 6, o.y + bob + Math.sin(a) * 6); } ctx.closePath(); ctx.fillStyle = col; ctx.fill(); }
+    else { ctx.moveTo(o.x, o.y + bob - 7); ctx.lineTo(o.x, o.y + bob); ctx.lineTo(o.x + 5, o.y + bob + 3); ctx.stroke(); }
+  }
 
   // magnets
   for (const m of magnets) {
@@ -279,7 +410,7 @@ function render() {
 
   // mines
   for (const m of mines) {
-    if (m.y < top || m.y > bot) continue;
+    if (m.dead || m.y < top || m.y > bot) continue;
     ctx.save(); ctx.translate(m.x, m.y); ctx.rotate(-t * 1.2);
     glow(0, 0, 28, ORANGE, .4);
     ctx.fillStyle = ORANGE; ctx.beginPath();
@@ -299,11 +430,14 @@ function render() {
 
   // player
   if (state === 'play') {
+    if (p.inv > 0 && Math.floor(t * 20) % 2) ctx.globalAlpha = .4;
     glow(p.x, p.y, 34 + p.flip * 22, pc, .75);
+    if (p.shield) { ctx.strokeStyle = '#7cffb2'; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.arc(p.x, p.y, 17 + Math.sin(t * 8) * 1.5, 0, 6.283); ctx.stroke(); }
     ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(p.x, p.y, 9, 0, 6.283); ctx.fill();
     ctx.strokeStyle = pc; ctx.lineWidth = 3.5; ctx.stroke();
     ctx.fillStyle = pc; ctx.font = 'bold 13px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText(p.s > 0 ? '+' : '−', p.x, p.y + 1);
+    ctx.globalAlpha = 1;
   }
   ctx.restore();
 
@@ -321,6 +455,15 @@ function render() {
     ctx.fillText('КОМБО ×' + Math.min(combo, 10), W / 2, 84);
     ctx.fillRect(W / 2 - 40, 92, 80 * Math.min(1, comboT / 3), 3);
     ctx.globalAlpha = 1;
+  }
+  if (bannerT > 0 && state === 'play') {
+    ctx.textAlign = 'center'; ctx.fillStyle = '#fff'; ctx.font = '800 30px sans-serif';
+    ctx.globalAlpha = Math.min(1, bannerT) * .9;
+    ctx.fillText('ЗОНА: ' + ZONES[curZone % 4].n, W / 2, H * 0.3); ctx.globalAlpha = 1;
+  }
+  if (slowT > 0 && state === 'play') {
+    ctx.textAlign = 'left'; ctx.fillStyle = '#c58bff'; ctx.font = '700 13px sans-serif';
+    ctx.fillText('ЗАМЕДЛЕНИЕ ' + slowT.toFixed(1), 16, 68);
   }
   if (state === 'play' && t < 5) {
     ctx.textAlign = 'center'; ctx.fillStyle = '#fff'; ctx.font = '600 14px sans-serif';
@@ -348,7 +491,7 @@ function frame(now) {
   const dt = Math.min(0.033, (now - last) / 1000); last = now;
   if (!paused) {
     if (state === 'menu') t += dt;
-    else { step(dt / 2); step(dt / 2); stepParts(dt); }
+    else { const ts = slowT > 0 ? 0.6 : 1; if (slowT > 0) slowT -= dt; step(dt * ts / 2); step(dt * ts / 2); stepParts(dt); }
   }
   render();
   requestAnimationFrame(frame);
