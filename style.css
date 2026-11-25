@@ -1,0 +1,21 @@
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;-webkit-touch-callout:none;user-select:none;-webkit-user-select:none}
+html,body{margin:0;height:100%;background:#05050f;overflow:hidden;overscroll-behavior:none;touch-action:none;
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#eaf0ff}
+canvas{position:fixed;left:50%;top:0;transform:translateX(-50%);display:block;touch-action:none}
+.overlay{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;
+  padding:20px;text-align:center;background:rgba(5,5,20,.62);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);z-index:5}
+.hidden{display:none}
+h1{margin:0;font-size:clamp(38px,11vw,64px);letter-spacing:.12em;font-weight:800;
+  background:linear-gradient(90deg,#ff4d6d,#ffd166 50%,#4dc3ff);-webkit-background-clip:text;background-clip:text;color:transparent}
+h2{margin:0;font-size:32px;letter-spacing:.06em}
+.sub{margin:0;opacity:.75;font-size:15px}
+.how{max-width:340px;font-size:14px;line-height:1.5;opacity:.9;display:flex;flex-direction:column;gap:6px;margin:6px 0 10px}
+.red{color:#ff4d6d}.blue{color:#4dc3ff}.gold{color:#ffd166}.mine{color:#ff9e3d}
+.big{font-size:72px;font-weight:800;line-height:1}
+.btn{width:min(300px,80vw);padding:15px 18px;font-size:18px;font-weight:700;color:#eaf0ff;background:rgba(255,255,255,.08);
+  border:1.5px solid rgba(255,255,255,.28);border-radius:14px;cursor:pointer;font-family:inherit}
+.btn small{display:block;font-size:12px;font-weight:500;opacity:.7;margin-top:2px}
+.btn.main{background:linear-gradient(90deg,#ff4d6d,#4d7bff);border:none}
+.btn:active{transform:scale(.97)}
+.link{background:none;border:none;color:#9fb0e0;font-size:14px;cursor:pointer;padding:8px;font-family:inherit}
+.row{display:flex;gap:16px;align-items:center;font-size:13px;opacity:.85;margin-top:6px}
