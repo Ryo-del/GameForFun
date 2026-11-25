@@ -48,10 +48,10 @@ resize();
 const RED = '#ff4d6d', BLUE = '#4dc3ff', GOLD = '#ffd166', ORANGE = '#ff9e3d';
 let state = 'menu', mode = 'random', seed = 0, rng = Math.random;
 let t = 0, camY = 0, genY = 0, dist = 0, bonus = 0, combo = 0, comboT = 0, shake = 0, deadT = 0, shardCount = 0;
-let p, magnets, shards, mines, parts, trail;
+let held = 0, p, magnets, shards, mines, parts, trail;
 const stars = Array.from({ length: 70 }, () => ({ x: Math.random() * W, y: Math.random() * 1000, d: 0.1 + Math.random() * 0.5, r: Math.random() * 1.4 + .4 }));
 
-const K = 3.0e6, SOFT = 900, FMAX = 1500, VMAX = 560, DRAG = 0.55;
+const K = 3.0e6, SOFT = 2500, FMAX = 1500, VMAX = 560, DRAG = 0.55;
 const diff = () => Math.min(1, dist / 7000);
 const score = () => Math.floor(dist / 10) + bonus;
 
@@ -59,12 +59,12 @@ function startGame(m) {
   mode = m;
   seed = m === 'daily' ? hashStr(todayKey()) : (Math.random() * 4294967296) >>> 0;
   rng = mulberry32(seed);
-  t = 0; camY = 0; dist = 0; bonus = 0; combo = 0; comboT = 0; shake = 0; deadT = 0; shardCount = 0;
+  held = 0; t = 0; camY = 0; dist = 0; bonus = 0; combo = 0; comboT = 0; shake = 0; deadT = 0; shardCount = 0;
   p = { x: W / 2, y: H * 0.72, vx: 0, vy: 0, s: 1, flip: 0 };
   magnets = []; shards = []; mines = []; parts = []; trail = [];
   // tutorial magnet
-  magnets.push({ x: W / 2, y: p.y - 190, q: -1, s: 1, r: 15 });
-  shards.push({ x: W / 2 + 70, y: p.y - 250, got: false });
+  magnets.push({ x: W / 2 + 55, y: p.y - 190, q: -1, s: 1, r: 15 });
+  shards.push({ x: W / 2 - 40, y: p.y - 250, got: false });
   genY = p.y - 330;
   generate();
   state = 'play';
@@ -157,7 +157,7 @@ function step(dt) {
       if (vn < 0) { p.vx -= 1.7 * vn * nx; p.vy -= 1.7 * vn * ny; beep(140, .06, 'square', .05); shake = Math.max(shake, 3); }
     }
   }
-  p.vx += ax * dt; p.vy += ay * dt;
+  p.vx += (ax + held * 800) * dt; p.vy += ay * dt;
   const dr = Math.exp(-DRAG * dt); p.vx *= dr; p.vy *= dr;
   const sp = Math.hypot(p.vx, p.vy); if (sp > VMAX) { p.vx *= VMAX / sp; p.vy *= VMAX / sp; }
   p.x += p.vx * dt; p.y += p.vy * dt;
@@ -315,7 +315,7 @@ function render() {
   if (state === 'play' && t < 5) {
     ctx.textAlign = 'center'; ctx.fillStyle = '#fff'; ctx.font = '600 14px sans-serif';
     ctx.globalAlpha = Math.min(1, 5 - t);
-    ctx.fillText('ТАП слева / справа — смена заряда и рывок в сторону', W / 2, H * 0.88);
+    ctx.fillText('ТАП слева / справа — смена заряда; держи палец — движение в сторону', W / 2, H * 0.88);
     ctx.font = '13px sans-serif'; ctx.fillText('разные заряды притягиваются', W / 2, H * 0.88 + 22);
     ctx.globalAlpha = 1;
   }
@@ -349,8 +349,15 @@ document.addEventListener('visibilitychange', () => { paused = document.hidden; 
 cv.addEventListener('pointerdown', e => {
   e.preventDefault();
   const r = cv.getBoundingClientRect();
-  flip(e.clientX < r.left + r.width / 2 ? -1 : 1);
+  held = e.clientX < r.left + r.width / 2 ? -1 : 1;
+  flip(held);
 });
+cv.addEventListener('pointermove', e => {
+  if (!held) return;
+  const r = cv.getBoundingClientRect();
+  held = e.clientX < r.left + r.width / 2 ? -1 : 1;
+});
+['pointerup', 'pointercancel', 'pointerleave'].forEach(n => cv.addEventListener(n, () => { held = 0; }));
 window.addEventListener('keydown', e => {
   if (e.repeat) return;
   if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyZ', 'KeyX'].includes(e.code)) {
